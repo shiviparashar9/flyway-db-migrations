@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/shiviparashar9/flyway-db-migrations'
+                git branch: 'main', url: 'https://github.com/shiviparashar9/flyway-db-migrations'
             }
         }
 
