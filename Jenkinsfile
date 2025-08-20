@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    triggers {
+        pollSCM('H/2 * * * *')  // poll every 2 minutes
+    }
+    
     environment {
         FLYWAY_URL = 'jdbc:postgresql://localhost:5433/ntnx_ds_test'  // match your port
         FLYWAY_USER = 'flyway_user'
