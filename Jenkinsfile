@@ -14,6 +14,37 @@ pipeline {
             }
         }
 
+        stage('Prepare Migration Files') {
+            steps {
+                sh '''
+                timestamp=$(date +%Y%m%d_%H%M%S)
+
+                for FILE in sql/*.sql; do
+                  [ -e "$FILE" ] || continue
+
+                  BASENAME=$(basename "$FILE")
+
+                  # If already versioned, skip
+                  if [[ "$BASENAME" =~ ^V[0-9]+__.*\\.sql$ ]]; then
+                      echo "Skipping already versioned: $BASENAME"
+                      continue
+                  fi
+
+                  # Expect devs to prefix with order number like 01_, 02_
+                  if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
+                      ORDER="${BASH_REMATCH[1]}"
+                      NAME="${BASH_REMATCH[2]}"
+                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
+                      echo "Renaming $BASENAME -> $(basename $NEWFILE)"
+                      mv "$FILE" "$NEWFILE"
+                  else
+                      echo "WARNING: $BASENAME has no numeric prefix, skipping."
+                  fi
+                done
+                '''
+            }
+        }
+
         stage('Flyway Migrate') {
             steps {
                 sh '''
