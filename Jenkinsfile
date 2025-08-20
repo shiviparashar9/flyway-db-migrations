@@ -22,29 +22,52 @@ pipeline {
             steps {
                 sh '''
                 timestamp=$(date +%Y%m%d_%H%M%S)
+                FILES=(sql/*.sql)
 
-                for FILE in sql/*.sql; do
-                  [ -e "$FILE" ] || continue
+                # Skip if no SQL files
+                [ -e "${FILES[0]}" ] || exit 0
 
+                if [[ ${#FILES[@]} -eq 1 ]]; then
+                  # Only one file, allow without prefix
+                  FILE="${FILES[0]}"
                   BASENAME=$(basename "$FILE")
 
-                  # If already versioned, skip
                   if [[ "$BASENAME" =~ ^V[0-9]+__.*\\.sql$ ]]; then
                       echo "Skipping already versioned: $BASENAME"
-                      continue
-                  fi
-
-                  # Expect devs to prefix with order number like 01_, 02_
-                  if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
-                      ORDER="${BASH_REMATCH[1]}"
-                      NAME="${BASH_REMATCH[2]}"
-                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
-                      echo "Renaming $BASENAME -> $(basename $NEWFILE)"
-                      mv "$FILE" "$NEWFILE"
                   else
-                      echo "WARNING: $BASENAME has no numeric prefix, skipping."
+                      NAME="${BASENAME%.sql}"
+                      NEWFILE="sql/V${timestamp}__${NAME}.sql"
+                      echo "Single file detected. Renaming $BASENAME -> $(basename $NEWFILE)"
+                      mv "$FILE" "$NEWFILE"
                   fi
-                done
+                else
+                  # Multiple files
+                  counter=1
+                  for FILE in "${FILES[@]}"; do
+                      BASENAME=$(basename "$FILE")
+
+                      # Skip already versioned
+                      if [[ "$BASENAME" =~ ^V[0-9]+__.*\\.sql$ ]]; then
+                          echo "Skipping already versioned: $BASENAME"
+                          continue
+                      fi
+
+                      if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
+                          ORDER="${BASH_REMATCH[1]}"
+                          NAME="${BASH_REMATCH[2]}"
+                          NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
+                          echo "Renaming $BASENAME -> $(basename $NEWFILE)"
+                          mv "$FILE" "$NEWFILE"
+                      else
+                          ORDER=$(printf "%02d" $counter)
+                          NAME="${BASENAME%.sql}"
+                          NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
+                          echo "Auto-ordering: $BASENAME -> $(basename $NEWFILE)"
+                          mv "$FILE" "$NEWFILE"
+                          counter=$((counter+1))
+                      fi
+                  done
+                fi
                 '''
             }
         }
