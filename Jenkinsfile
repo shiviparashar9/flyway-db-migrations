@@ -2,14 +2,14 @@ pipeline {
     agent any
 
     triggers {
-        // Poll every 2 minutes (only detects new commits on main)
-        pollSCM('H/2 * * * *')
+        pollSCM('H/2 * * * *')  // poll every 2 minutes
     }
     
     environment {
-        FLYWAY_URL = 'jdbc:postgresql://localhost:5433/ntnx_ds_test'
-        FLYWAY_USER = 'flyway_user'
+        FLYWAY_URL      = 'jdbc:postgresql://localhost:5433/ntnx_ds_test'
+        FLYWAY_USER     = 'flyway_user'
         FLYWAY_PASSWORD = 'flyway_user'
+        GIT_CREDENTIALS = 'git-credentials-id'  // <-- Jenkins credentials ID
     }
 
     stages {
@@ -29,9 +29,6 @@ pipeline {
                   [ -e "$FILE" ] || continue
                   BASENAME=$(basename "$FILE")
 
-                  # Remove .sql extension for clean naming
-                  NAME_NO_EXT="${BASENAME%.sql}"
-
                   # 1. Skip already Flyway-versioned files
                   if [[ "$BASENAME" =~ ^V[0-9]+__.*\\.sql$ ]]; then
                       echo "Skipping already versioned: $BASENAME"
@@ -39,18 +36,18 @@ pipeline {
                   fi
 
                   # 2. If prefixed with number (01_, 02_, etc.)
-                  if [[ "$NAME_NO_EXT" =~ ^([0-9]+)_(.*)$ ]]; then
+                  if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
                       ORDER="${BASH_REMATCH[1]}"
                       NAME="${BASH_REMATCH[2]}"
-                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
+                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}"
                       echo "Renaming $BASENAME -> $(basename "$NEWFILE")"
                       mv "$FILE" "$NEWFILE"
 
                   # 3. If no prefix, assign sequential order
                   else
                       ORDER=$(printf "%02d" $counter)
-                      NAME="$NAME_NO_EXT"
-                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
+                      NAME="$BASENAME"
+                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}"
                       echo "Auto-ordering: $BASENAME -> $(basename "$NEWFILE")"
                       mv "$FILE" "$NEWFILE"
                       counter=$((counter+1))
@@ -60,13 +57,31 @@ pipeline {
             }
         }
 
+        stage('Commit Renamed Files') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${env.GIT_CREDENTIALS}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                    sh '''
+                    git config user.email "ci-bot@example.com"
+                    git config user.name "CI Bot"
+
+                    git add sql/V*.sql || true
+                    if ! git diff --cached --quiet; then
+                        git commit -m "Auto-rename SQL migrations for Flyway"
+                        git push https://$GIT_USER:$GIT_PASS@github.com/shiviparashar9/flyway-db-migrations HEAD:main
+                    else
+                        echo "No migration files to commit"
+                    fi
+                    '''
+                }
+            }
+        }
+
         stage('Flyway Migrate') {
             steps {
                 sh '''
                 if [ ! -f flyway/flyway ]; then
-                    echo "Downloading Flyway..."
                     curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.16.0/flyway-commandline-10.16.0-macosx-x64.tar.gz \
-                        -o flyway.tar.gz
+                    -o flyway.tar.gz
                     tar -xzf flyway.tar.gz
                     mv flyway-10.16.0 flyway
                     chmod +x flyway/flyway
