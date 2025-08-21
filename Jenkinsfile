@@ -27,7 +27,7 @@ pipeline {
 
                   # 1. Skip already Flyway-versioned files
                   # Match any file that already starts with VYYYYMMDD_HHMMSS_ followed by number __name.sql
-                  if [[ "$BASENAME" =~ ^V[0-9]{8}_[0-9]{6}_[0-9]+__.*\.sql$ ]]; then
+                  if [[ "$BASENAME" =~ '^V[0-9]{8}_[0-9]{6}_[0-9]+__.*\.sql$' ]]; then
                       echo "Skipping already versioned: $BASENAME"
                       continue
                   fi
