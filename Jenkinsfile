@@ -9,6 +9,7 @@ pipeline {
         FLYWAY_URL = 'jdbc:postgresql://localhost:5433/ntnx_ds_test'
         FLYWAY_USER = 'flyway_user'
         FLYWAY_PASSWORD = 'flyway_user'
+        GIT_CREDENTIALS = 'git-credentials-id'
     }
 
     stages {
@@ -59,7 +60,7 @@ pipeline {
 
         stage('Commit Renamed Files') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'GIT_CREDENTIALS', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: "${env.GIT_CREDENTIALS}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                     sh '''
                     git config user.email "ci-bot@example.com"
                     git config user.name "CI Bot"
