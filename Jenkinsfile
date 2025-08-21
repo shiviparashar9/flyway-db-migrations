@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     triggers {
-        pollSCM('H/2 * * * *')  // poll every 2 minutes
+        // Poll every 2 minutes (only detects new commits on main)
+        pollSCM('H/2 * * * *')
     }
     
     environment {
@@ -28,6 +29,9 @@ pipeline {
                   [ -e "$FILE" ] || continue
                   BASENAME=$(basename "$FILE")
 
+                  # Remove .sql extension for clean naming
+                  NAME_NO_EXT="${BASENAME%.sql}"
+
                   # 1. Skip already Flyway-versioned files
                   if [[ "$BASENAME" =~ ^V[0-9]+__.*\\.sql$ ]]; then
                       echo "Skipping already versioned: $BASENAME"
@@ -35,7 +39,7 @@ pipeline {
                   fi
 
                   # 2. If prefixed with number (01_, 02_, etc.)
-                  if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
+                  if [[ "$NAME_NO_EXT" =~ ^([0-9]+)_(.*)$ ]]; then
                       ORDER="${BASH_REMATCH[1]}"
                       NAME="${BASH_REMATCH[2]}"
                       NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
@@ -45,7 +49,7 @@ pipeline {
                   # 3. If no prefix, assign sequential order
                   else
                       ORDER=$(printf "%02d" $counter)
-                      NAME="$BASENAME"
+                      NAME="$NAME_NO_EXT"
                       NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
                       echo "Auto-ordering: $BASENAME -> $(basename "$NEWFILE")"
                       mv "$FILE" "$NEWFILE"
@@ -60,8 +64,9 @@ pipeline {
             steps {
                 sh '''
                 if [ ! -f flyway/flyway ]; then
+                    echo "Downloading Flyway..."
                     curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.16.0/flyway-commandline-10.16.0-macosx-x64.tar.gz \
-                    -o flyway.tar.gz
+                        -o flyway.tar.gz
                     tar -xzf flyway.tar.gz
                     mv flyway-10.16.0 flyway
                     chmod +x flyway/flyway
