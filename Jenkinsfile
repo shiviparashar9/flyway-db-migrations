@@ -11,46 +11,61 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/shiviparashar9/flyway-db-migrations'
+                // Use checkout scm to preserve workspace state
+                checkout scm
             }
         }
 
         stage('Prepare Migration Files') {
             steps {
                 sh '''
+                #!/bin/sh
+
                 timestamp=$(date +%Y%m%d_%H%M%S)
                 counter=1
 
                 for FILE in sql/*.sql; do
-                  [ -e "$FILE" ] || continue
-                  BASENAME=$(basename "$FILE")
+                    [ -e "$FILE" ] || continue
+                    BASENAME=$(basename "$FILE")
 
-                  # 1. Skip already Flyway-versioned files
-                  # Match any file that already starts with VYYYYMMDD_HHMMSS_ followed by number __name.sql
-                  if [[ "$BASENAME" =~ '^V[0-9]{8}_[0-9]{6}_[0-9]+__.*\.sql$' ]]; then
-                      echo "Skipping already versioned: $BASENAME"
-                      continue
-                  fi
+                    # Skip files already in Flyway format
+                    case "$BASENAME" in
+                        V[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]_??__*.sql)
+                            echo "Skipping already versioned: $BASENAME"
+                            continue
+                            ;;
+                    esac
 
-                  # 2. If prefixed with number (01_, 02_, etc.)
-                  if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
-                      ORDER="${BASH_REMATCH[1]}"
-                      NAME="${BASH_REMATCH[2]}"
-                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
-                      echo "Renaming $BASENAME -> $(basename "$NEWFILE")"
-                      mv "$FILE" "$NEWFILE"
+                    # If file starts with number prefix (01_, 02_, etc.)
+                    case "$BASENAME" in
+                        [0-9][0-9]_*.sql)
+                            ORDER=${BASENAME%%_*}
+                            NAME=${BASENAME#*_}
+                            NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}"
+                            echo "Renaming $BASENAME -> $(basename "$NEWFILE")"
+                            mv "$FILE" "$NEWFILE"
+                            ;;
 
-                  # 3. If no prefix, assign sequential order
-                  else
-                      ORDER=$(printf "%02d" $counter)
-                      NAME="$BASENAME"
-                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}"
-                      [[ "$NEWFILE" =~ \\.sql$ ]] || NEWFILE="${NEWFILE}.sql"
-                      echo "Auto-ordering: $BASENAME -> $(basename "$NEWFILE")"
-                      mv "$FILE" "$NEWFILE"
-                      counter=$((counter+1))
-                  fi
+                        *)
+                            # No prefix: assign sequential order
+                            ORDER=$(printf "%02d" $counter)
+                            NEWFILE="sql/V${timestamp}_${ORDER}__${BASENAME}"
+                            echo "Auto-ordering: $BASENAME -> $(basename "$NEWFILE")"
+                            mv "$FILE" "$NEWFILE"
+                            counter=$((counter + 1))
+                            ;;
+                    esac
                 done
+                '''
+            }
+        }
+
+        stage('Debug Workspace') {
+            steps {
+                sh '''
+                echo "Listing SQL files after renaming:"
+                ls -l sql/
+                git status
                 '''
             }
         }
@@ -65,6 +80,8 @@ pipeline {
                     git add sql/V*.sql || true
 
                     if ! git diff --cached --quiet; then
+                      echo "Files to commit:"
+                      git diff --cached --name-only
                       git commit -m "Auto-renamed migration files [ci skip]"
                       git push https://${GIT_USER}:${GIT_PASS}@github.com/shiviparashar9/flyway-db-migrations HEAD:main
                     else
