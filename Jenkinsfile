@@ -6,10 +6,9 @@ pipeline {
     }
     
     environment {
-        FLYWAY_URL      = 'jdbc:postgresql://localhost:5433/ntnx_ds_test'
-        FLYWAY_USER     = 'flyway_user'
+        FLYWAY_URL = 'jdbc:postgresql://localhost:5433/ntnx_ds_test'
+        FLYWAY_USER = 'flyway_user'
         FLYWAY_PASSWORD = 'flyway_user'
-        GIT_CREDENTIALS = 'git-credentials-id'  // <-- Jenkins credentials ID
     }
 
     stages {
@@ -39,7 +38,7 @@ pipeline {
                   if [[ "$BASENAME" =~ ^([0-9]+)_(.*)\\.sql$ ]]; then
                       ORDER="${BASH_REMATCH[1]}"
                       NAME="${BASH_REMATCH[2]}"
-                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}"
+                      NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}.sql"
                       echo "Renaming $BASENAME -> $(basename "$NEWFILE")"
                       mv "$FILE" "$NEWFILE"
 
@@ -48,6 +47,7 @@ pipeline {
                       ORDER=$(printf "%02d" $counter)
                       NAME="$BASENAME"
                       NEWFILE="sql/V${timestamp}_${ORDER}__${NAME}"
+                      [[ "$NEWFILE" =~ \\.sql$ ]] || NEWFILE="${NEWFILE}.sql"
                       echo "Auto-ordering: $BASENAME -> $(basename "$NEWFILE")"
                       mv "$FILE" "$NEWFILE"
                       counter=$((counter+1))
@@ -59,17 +59,18 @@ pipeline {
 
         stage('Commit Renamed Files') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${env.GIT_CREDENTIALS}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'GIT_CREDENTIALS', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                     sh '''
                     git config user.email "ci-bot@example.com"
                     git config user.name "CI Bot"
 
                     git add sql/V*.sql || true
+
                     if ! git diff --cached --quiet; then
-                        git commit -m "Auto-rename SQL migrations for Flyway"
-                        git push https://$GIT_USER:$GIT_PASS@github.com/shiviparashar9/flyway-db-migrations HEAD:main
+                      git commit -m "Auto-renamed migration files [ci skip]"
+                      git push https://${GIT_USER}:${GIT_PASS}@github.com/shiviparashar9/flyway-db-migrations HEAD:main
                     else
-                        echo "No migration files to commit"
+                      echo "No migration files to commit"
                     fi
                     '''
                 }
